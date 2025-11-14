@@ -16,9 +16,21 @@ import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient }
 
+// Use POSTGRES_PRISMA_URL for runtime (connection pooling, optimized for Prisma)
+// Falls back to POSTGRES_URL_NON_POOLING or DATABASE_URL
+const databaseUrl = 
+  process.env.POSTGRES_PRISMA_URL || 
+  process.env.POSTGRES_URL_NON_POOLING || 
+  process.env.DATABASE_URL
+
 export const prisma =
   globalForPrisma.prisma ||
   new PrismaClient({
+    datasources: {
+      db: {
+        url: databaseUrl,
+      },
+    },
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
   })
 
