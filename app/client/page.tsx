@@ -19,8 +19,9 @@ interface Session {
   startAt: string
   endAt: string
   maxClients: number
-  freeSpots: number
-  activeBookings: number
+  capacityLeft: number
+  isBookedByCurrentUser: boolean
+  status: string
 }
 
 interface Booking {
@@ -42,7 +43,15 @@ interface Booking {
 export default function ClientPage() {
   const router = useRouter()
   const { currentUserId, currentUserRole } = useUser()
-  const [selectedDate, setSelectedDate] = useState<string>('Today')
+  
+  // Initialize selectedDate to today in YYYY-MM-DD format
+  const getTodayDate = (): string => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    return today.toISOString().split('T')[0]
+  }
+  
+  const [selectedDate, setSelectedDate] = useState<string>(getTodayDate())
   const [sessions, setSessions] = useState<Session[]>([])
   const [myBookings, setMyBookings] = useState<Booking[]>([])
   const [loadingSessions, setLoadingSessions] = useState(false)
@@ -65,38 +74,6 @@ export default function ClientPage() {
     }
   }, [currentUserId, router])
 
-  // Convert date string to YYYY-MM-DD format
-  const getDateString = (dateLabel: string): string => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    switch (dateLabel) {
-      case 'Today':
-        return today.toISOString().split('T')[0]
-      case 'Tomorrow':
-        const tomorrow = new Date(today)
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        return tomorrow.toISOString().split('T')[0]
-      case 'Yesterday':
-        const yesterday = new Date(today)
-        yesterday.setDate(yesterday.getDate() - 1)
-        return yesterday.toISOString().split('T')[0]
-      default:
-        if (dateLabel.startsWith('In ')) {
-          const days = parseInt(dateLabel.split(' ')[1]) || 0
-          const futureDate = new Date(today)
-          futureDate.setDate(futureDate.getDate() + days)
-          return futureDate.toISOString().split('T')[0]
-        } else if (dateLabel.endsWith(' days ago')) {
-          const days = parseInt(dateLabel) || 0
-          const pastDate = new Date(today)
-          pastDate.setDate(pastDate.getDate() - days)
-          return pastDate.toISOString().split('T')[0]
-        }
-        return today.toISOString().split('T')[0]
-    }
-  }
-
   // Format time from ISO string to HH:MM format
   const formatTime = (isoString: string): string => {
     const date = new Date(isoString)
@@ -110,8 +87,26 @@ export default function ClientPage() {
     return `${formatTime(startAt)}–${formatTime(endAt)}`
   }
 
+  // Format date from YYYY-MM-DD to display format
+  const formatDateDisplay = (dateString: string): string => {
+    const date = new Date(dateString + 'T00:00:00')
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    const diffTime = date.getTime() - today.getTime()
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24))
+    
+    if (diffDays === 0) return 'Сегодня'
+    if (diffDays === 1) return 'Завтра'
+    if (diffDays === -1) return 'Вчера'
+    if (diffDays > 1) return `Через ${diffDays} ${diffDays < 5 ? 'дня' : 'дней'}`
+    if (diffDays < -1) return `${Math.abs(diffDays)} ${Math.abs(diffDays) < 5 ? 'дня' : 'дней'} назад`
+    
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' })
+  }
+
   // Load sessions for the selected date
-  const loadSessions = async (dateLabel: string) => {
+  const loadSessions = async () => {
     if (!currentUserId) {
       return
     }
@@ -120,8 +115,7 @@ export default function ClientPage() {
     setError(null)
 
     try {
-      const dateString = getDateString(dateLabel)
-      const response = await fetch(`/api/sessions?date=${dateString}`)
+      const response = await fetch(`/api/sessions?date=${selectedDate}&userId=${currentUserId}`)
 
       if (!response.ok) {
         throw new Error('Failed to load sessions')
@@ -147,11 +141,7 @@ export default function ClientPage() {
     setError(null)
 
     try {
-      const response = await fetch('/api/bookings/my', {
-        headers: {
-          'x-user-id': currentUserId,
-        },
-      })
+      const response = await fetch(`/api/bookings/my?userId=${currentUserId}`)
 
       if (!response.ok) {
         throw new Error('Failed to load bookings')
@@ -169,73 +159,23 @@ export default function ClientPage() {
 
   // Load data on mount and when date changes
   useEffect(() => {
-    loadSessions(selectedDate)
-    loadMyBookings()
+    if (currentUserId) {
+      loadSessions()
+      loadMyBookings()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDate]) // Only reload when selectedDate changes
+  }, [selectedDate, currentUserId])
 
   const handlePreviousDay = () => {
-    if (selectedDate === 'Today') {
-      setSelectedDate('Yesterday')
-    } else if (selectedDate === 'Yesterday') {
-      setSelectedDate('2 days ago')
-    } else if (selectedDate === 'Tomorrow') {
-      setSelectedDate('Today')
-    } else if (selectedDate.startsWith('In ')) {
-      const days = parseInt(selectedDate.split(' ')[1]) || 2
-      if (days === 2) {
-        setSelectedDate('Tomorrow')
-      } else {
-        setSelectedDate(`In ${days - 1} days`)
-      }
-    } else if (selectedDate.endsWith(' days ago')) {
-      const days = parseInt(selectedDate) || 2
-      if (days === 2) {
-        setSelectedDate('Yesterday')
-      } else {
-        setSelectedDate(`${days - 1} days ago`)
-      }
-    }
+    const date = new Date(selectedDate + 'T00:00:00')
+    date.setDate(date.getDate() - 1)
+    setSelectedDate(date.toISOString().split('T')[0])
   }
 
   const handleNextDay = () => {
-    if (selectedDate === 'Today') {
-      setSelectedDate('Tomorrow')
-    } else if (selectedDate === 'Tomorrow') {
-      setSelectedDate('In 2 days')
-    } else if (selectedDate === 'Yesterday') {
-      setSelectedDate('Today')
-    } else if (selectedDate === '2 days ago') {
-      setSelectedDate('Yesterday')
-    } else if (selectedDate.startsWith('In ')) {
-      const days = parseInt(selectedDate.split(' ')[1]) || 2
-      setSelectedDate(`In ${days + 1} days`)
-    } else if (selectedDate.endsWith(' days ago')) {
-      const days = parseInt(selectedDate) || 2
-      if (days === 2) {
-        setSelectedDate('Yesterday')
-      } else {
-        setSelectedDate(`${days - 1} days ago`)
-      }
-    }
-  }
-
-  // Format date label for display
-  const formatDateLabel = (dateLabel: string): string => {
-    if (dateLabel === 'Today') return 'Сегодня'
-    if (dateLabel === 'Tomorrow') return 'Завтра'
-    if (dateLabel === 'Yesterday') return 'Вчера'
-    if (dateLabel.startsWith('In ')) {
-      const days = parseInt(dateLabel.split(' ')[1]) || 0
-      if (days === 1) return 'Завтра'
-      return `Через ${days} ${days === 1 ? 'день' : days < 5 ? 'дня' : 'дней'}`
-    }
-    if (dateLabel.endsWith(' days ago')) {
-      const days = parseInt(dateLabel) || 0
-      if (days === 1) return 'Вчера'
-      return `${days} ${days === 1 ? 'день' : days < 5 ? 'дня' : 'дней'} назад`
-    }
-    return dateLabel
+    const date = new Date(selectedDate + 'T00:00:00')
+    date.setDate(date.getDate() + 1)
+    setSelectedDate(date.toISOString().split('T')[0])
   }
 
   const handleBook = async (session: Session) => {
@@ -262,16 +202,22 @@ export default function ClientPage() {
       const data = await response.json()
 
       if (!response.ok) {
+        // Handle specific error messages
+        if (data.error === 'Session is full') {
+          alert('К сожалению, все места заняты')
+        } else if (data.error?.includes('already') || data.error?.includes('Already')) {
+          alert('Вы уже записаны на эту тренировку')
+        } else {
+          alert(data.error || 'Не удалось забронировать тренировку')
+        }
         throw new Error(data.error || 'Failed to book session')
       }
 
-      alert('Тренировка успешно забронирована!')
-      // Refresh both lists
-      await Promise.all([loadSessions(selectedDate), loadMyBookings()])
+      // On success, reload both lists
+      await Promise.all([loadSessions(), loadMyBookings()])
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to book session'
       setError(errorMessage)
-      alert(errorMessage)
       console.error('Error booking session:', err)
     } finally {
       setBookingInProgress(null)
@@ -300,9 +246,8 @@ export default function ClientPage() {
         throw new Error(data.error || 'Failed to cancel booking')
       }
 
-      alert('Бронирование успешно отменено')
-      // Refresh both lists
-      await Promise.all([loadSessions(selectedDate), loadMyBookings()])
+      // On success, reload both lists
+      await Promise.all([loadSessions(), loadMyBookings()])
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to cancel booking'
       setError(errorMessage)
@@ -311,6 +256,28 @@ export default function ClientPage() {
     } finally {
       setCancellingBookingId(null)
     }
+  }
+
+  // Check if booking can be cancelled (at least 2 hours before session start)
+  const canCancelBooking = (booking: Booking): boolean => {
+    const sessionStart = new Date(booking.session.startAt)
+    const now = new Date()
+    const hoursUntilSession = (sessionStart.getTime() - now.getTime()) / (1000 * 60 * 60)
+    return hoursUntilSession >= 2
+  }
+
+  // Get button text and disabled state for a session
+  const getSessionButtonState = (session: Session) => {
+    if (session.status !== 'PLANNED') {
+      return { text: 'Недоступно', disabled: true }
+    }
+    if (session.capacityLeft <= 0) {
+      return { text: 'Мест нет', disabled: true }
+    }
+    if (session.isBookedByCurrentUser) {
+      return { text: 'Вы записаны', disabled: true }
+    }
+    return { text: 'Записаться', disabled: false }
   }
 
   return (
@@ -338,7 +305,7 @@ export default function ClientPage() {
             </button>
             
             <div className="text-xl font-semibold text-gray-800">
-              {formatDateLabel(selectedDate)}
+              {formatDateDisplay(selectedDate)}
             </div>
             
             <button
@@ -355,56 +322,59 @@ export default function ClientPage() {
         <div className="space-y-4 mb-12">
           {loadingSessions ? (
             <div className="bg-white rounded-lg shadow-md p-8 text-center">
-              <p className="text-gray-600 text-lg">Загрузка тренировок...</p>
+              <p className="text-gray-600 text-lg">Загрузка...</p>
             </div>
           ) : sessions.length === 0 ? (
             <div className="bg-white rounded-lg shadow-md p-8 text-center">
               <p className="text-gray-600 text-lg">На эту дату нет доступных тренировок.</p>
             </div>
           ) : (
-            sessions.map((session) => (
-              <div
-                key={session.id}
-                className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-6 mb-2">
-                      <span className="text-2xl font-bold text-gray-900">
-                        {formatTimeRange(session.startAt, session.endAt)}
-                      </span>
-                      <span className="text-lg text-gray-700">
-                        {session.trainerName}
-                      </span>
-                      <span className="text-lg text-gray-600 italic">
-                        {session.workoutTypeName}
-                      </span>
+            sessions.map((session) => {
+              const buttonState = getSessionButtonState(session)
+              return (
+                <div
+                  key={session.id}
+                  className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-6 mb-2">
+                        <span className="text-2xl font-bold text-gray-900">
+                          {formatTimeRange(session.startAt, session.endAt)}
+                        </span>
+                        <span className="text-lg text-gray-700">
+                          {session.trainerName}
+                        </span>
+                        <span className="text-lg text-gray-600 italic">
+                          {session.workoutTypeName}
+                        </span>
+                      </div>
+                      <div className="text-gray-600">
+                        Свободно: {session.capacityLeft}
+                      </div>
                     </div>
-                    <div className="text-gray-600">
-                      {session.freeSpots} {session.freeSpots === 1 ? 'свободное место' : session.freeSpots < 5 ? 'свободных места' : 'свободных мест'}
-                    </div>
+                    
+                    <button
+                      onClick={() => handleBook(session)}
+                      disabled={buttonState.disabled || bookingInProgress === session.id}
+                      className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-8 rounded-lg transition-colors ml-6"
+                    >
+                      {bookingInProgress === session.id ? 'Бронирование...' : buttonState.text}
+                    </button>
                   </div>
-                  
-                  <button
-                    onClick={() => handleBook(session)}
-                    disabled={session.freeSpots === 0 || bookingInProgress === session.id}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-8 rounded-lg transition-colors ml-6"
-                  >
-                    {bookingInProgress === session.id ? 'Бронирование...' : 'Забронировать'}
-                  </button>
                 </div>
-              </div>
-            ))
+              )
+            })
           )}
         </div>
 
         {/* My Bookings Section */}
         <div className="mt-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-6">Мои бронирования</h2>
+          <h2 className="text-3xl font-bold text-gray-900 mb-6">Мои записи</h2>
           
           {loadingBookings ? (
             <div className="bg-white rounded-lg shadow-md p-8 text-center">
-              <p className="text-gray-600 text-lg">Загрузка бронирований...</p>
+              <p className="text-gray-600 text-lg">Загрузка...</p>
             </div>
           ) : myBookings.length === 0 ? (
             <div className="bg-white rounded-lg shadow-md p-8 text-center">
@@ -412,37 +382,42 @@ export default function ClientPage() {
             </div>
           ) : (
             <div className="space-y-4">
-              {myBookings.map((booking) => (
-                <div
-                  key={booking.id}
-                  className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-6">
-                      <span className="text-2xl font-bold text-gray-900">
-                        {formatTimeRange(booking.session.startAt, booking.session.endAt)}
-                      </span>
-                      <span className="text-lg text-gray-700">
-                        {booking.session.trainerName}
-                      </span>
-                      <span className="text-lg text-gray-600 italic">
-                        {booking.session.workoutTypeName}
-                      </span>
-                      <span className="text-sm text-gray-500">
-                        {booking.session.date}
-                      </span>
+              {myBookings.map((booking) => {
+                const canCancel = canCancelBooking(booking)
+                return (
+                  <div
+                    key={booking.id}
+                    className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-6">
+                        <span className="text-2xl font-bold text-gray-900">
+                          {formatTimeRange(booking.session.startAt, booking.session.endAt)}
+                        </span>
+                        <span className="text-lg text-gray-700">
+                          {booking.session.trainerName}
+                        </span>
+                        <span className="text-lg text-gray-600 italic">
+                          {booking.session.workoutTypeName}
+                        </span>
+                        <span className="text-sm text-gray-500">
+                          {booking.session.date}
+                        </span>
+                      </div>
+                      
+                      {canCancel && (
+                        <button
+                          onClick={() => handleCancel(booking)}
+                          disabled={cancellingBookingId === booking.id}
+                          className="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-8 rounded-lg transition-colors ml-6"
+                        >
+                          {cancellingBookingId === booking.id ? 'Отмена...' : 'Отменить'}
+                        </button>
+                      )}
                     </div>
-                    
-                    <button
-                      onClick={() => handleCancel(booking)}
-                      disabled={cancellingBookingId === booking.id}
-                      className="bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold py-3 px-8 rounded-lg transition-colors ml-6"
-                    >
-                      {cancellingBookingId === booking.id ? 'Отмена...' : 'Отменить'}
-                    </button>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

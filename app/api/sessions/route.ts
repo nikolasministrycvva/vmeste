@@ -15,6 +15,7 @@ import { SessionStatus, BookingStatus } from '@/lib/types'
  * Query parameters:
  * - date (optional): YYYY-MM-DD format to filter by calendar date
  * - trainerId (optional): Filter by trainer ID
+ * - userId (optional): Current user ID to check if they booked each session
  * 
  * Returns: List of sessions with trainer name and workout type name
  */
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const date = searchParams.get('date')
     const trainerId = searchParams.get('trainerId')
+    const userId = searchParams.get('userId')
 
     // Build where clause
     const where: any = {
@@ -77,11 +79,24 @@ export async function GET(request: NextRequest) {
         const activeBookingsCount = await prisma.booking.count({
           where: {
             sessionId: session.id,
-            status: 'ACTIVE', // Using string literal since we're in API route
+            status: BookingStatus.ACTIVE,
           },
         })
 
-        const freeSpots = session.maxClients - activeBookingsCount
+        const capacityLeft = Math.max(0, session.maxClients - activeBookingsCount)
+
+        // Check if current user has booked this session
+        let isBookedByCurrentUser = false
+        if (userId) {
+          const userBooking = await prisma.booking.findFirst({
+            where: {
+              sessionId: session.id,
+              userId: userId,
+              status: BookingStatus.ACTIVE,
+            },
+          })
+          isBookedByCurrentUser = !!userBooking
+        }
 
         return {
           id: session.id,
@@ -93,7 +108,8 @@ export async function GET(request: NextRequest) {
           endAt: session.endAt.toISOString(),
           maxClients: session.maxClients,
           activeBookings: activeBookingsCount,
-          freeSpots: Math.max(0, freeSpots), // Ensure non-negative
+          capacityLeft: capacityLeft,
+          isBookedByCurrentUser: isBookedByCurrentUser,
           status: session.status,
           createdAt: session.createdAt.toISOString(),
         }

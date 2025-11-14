@@ -201,16 +201,22 @@ export async function POST(request: NextRequest) {
  * Returns all ACTIVE and future bookings for the current user.
  * Includes session details (date, time, trainer, workout type).
  * 
+ * Query parameters:
+ * - userId: Current user ID (required, can also be provided in x-user-id header)
+ * 
  * Headers:
- * - x-user-id: Current user ID (required)
+ * - x-user-id: Current user ID (optional, if not provided in query params)
  */
 export async function GET(request: NextRequest) {
   try {
-    const userId = getCurrentUserId(request)
+    // Try to get userId from query params first, then from header
+    const searchParams = request.nextUrl.searchParams
+    const userIdFromQuery = searchParams.get('userId')
+    const userId = userIdFromQuery || getCurrentUserId(request)
 
     if (!userId) {
       return NextResponse.json(
-        { error: 'User ID is required. Provide it in the x-user-id header.' },
+        { error: 'User ID is required. Provide it in the userId query parameter or x-user-id header.' },
         { status: 400 }
       )
     }
