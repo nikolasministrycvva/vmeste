@@ -7,10 +7,9 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  // Use POSTGRES_URL_NON_POOLING for migrations (direct connection)
-  // For Vercel: uses POSTGRES_URL_NON_POOLING automatically
   // For local: set DATABASE_URL in .env.local
-  url      = env("POSTGRES_URL_NON_POOLING") || env("DATABASE_URL")
+  // For Vercel: set DATABASE_URL = POSTGRES_URL_NON_POOLING in environment variables
+  url      = env("DATABASE_URL")
 }
 
 // ============================================
