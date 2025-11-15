@@ -83,8 +83,17 @@ export async function GET() {
     return NextResponse.json(testUsers, { status: 200 })
   } catch (error) {
     console.error('Error fetching test users:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    const errorDetails = process.env.NODE_ENV === 'development' 
+      ? { message: errorMessage, stack: error instanceof Error ? error.stack : undefined }
+      : { message: 'Failed to fetch test users' }
+    
     return NextResponse.json(
-      { error: 'Failed to fetch test users' },
+      { 
+        error: 'Failed to fetch test users',
+        details: errorDetails,
+        hint: 'Make sure the database is seeded. Run: POST /api/seed'
+      },
       { status: 500 }
     )
   }

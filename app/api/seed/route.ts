@@ -18,18 +18,7 @@ import { promisify } from 'util'
 
 const execAsync = promisify(exec)
 
-export async function POST(request: NextRequest) {
-  // Check for authorization (optional but recommended)
-  const authHeader = request.headers.get('authorization')
-  const expectedSecret = process.env.SEED_SECRET
-  
-  if (expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
-    return NextResponse.json(
-      { error: 'Unauthorized. Provide Authorization: Bearer YOUR_SEED_SECRET header.' },
-      { status: 401 }
-    )
-  }
-
+async function runSeed() {
   try {
     // Run seed script
     const { stdout, stderr } = await execAsync('npx prisma db seed')
@@ -54,5 +43,24 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     )
   }
+}
+
+export async function GET(request: NextRequest) {
+  return runSeed()
+}
+
+export async function POST(request: NextRequest) {
+  // Check for authorization (optional but recommended)
+  const authHeader = request.headers.get('authorization')
+  const expectedSecret = process.env.SEED_SECRET
+  
+  if (expectedSecret && authHeader !== `Bearer ${expectedSecret}`) {
+    return NextResponse.json(
+      { error: 'Unauthorized. Provide Authorization: Bearer YOUR_SEED_SECRET header.' },
+      { status: 401 }
+    )
+  }
+
+  return runSeed()
 }
 
