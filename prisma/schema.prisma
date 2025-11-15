@@ -8,6 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   // For local: set DATABASE_URL in .env.local
+  // For Supabase: set DATABASE_URL with direct connection string (port 5432)
   // For Vercel: set DATABASE_URL = POSTGRES_URL_NON_POOLING in environment variables
   url      = env("DATABASE_URL")
 }

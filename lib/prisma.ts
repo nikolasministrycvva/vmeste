@@ -16,12 +16,17 @@ import { PrismaClient } from '@prisma/client'
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient }
 
-// Use POSTGRES_PRISMA_URL for runtime (connection pooling, optimized for Prisma)
-// Falls back to POSTGRES_URL_NON_POOLING or DATABASE_URL
+// Priority order for database URL:
+// 1. DATABASE_URL (Supabase direct connection or Vercel Postgres)
+// 2. POSTGRES_PRISMA_URL (Vercel Postgres with connection pooling)
+// 3. POSTGRES_URL_NON_POOLING (Vercel Postgres direct connection)
+//
+// For Supabase: Use DATABASE_URL with direct connection (port 5432)
+// For Vercel Postgres: Use POSTGRES_PRISMA_URL for runtime, DATABASE_URL for migrations
 const databaseUrl = 
+  process.env.DATABASE_URL ||
   process.env.POSTGRES_PRISMA_URL || 
-  process.env.POSTGRES_URL_NON_POOLING || 
-  process.env.DATABASE_URL
+  process.env.POSTGRES_URL_NON_POOLING
 
 export const prisma =
   globalForPrisma.prisma ||
