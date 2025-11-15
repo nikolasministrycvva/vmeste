@@ -9,6 +9,117 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { Role } from '@/lib/types'
+
+async function seedDatabase() {
+  console.log('🌱 Starting seed...')
+
+  // Create admin user
+  const admin = await prisma.user.upsert({
+    where: { telegramId: 'admin-telegram-id' },
+    update: {},
+    create: {
+      name: 'Admin',
+      telegramId: 'admin-telegram-id',
+      role: Role.ADMIN,
+      isActive: true,
+    },
+  })
+  console.log('✅ Admin user created:', admin.name)
+
+  // Create client user
+  const client = await prisma.user.upsert({
+    where: { telegramId: 'client-telegram-id' },
+    update: {},
+    create: {
+      name: 'Client 1',
+      telegramId: 'client-telegram-id',
+      role: Role.CLIENT,
+      isActive: true,
+    },
+  })
+  console.log('✅ Client user created:', client.name)
+
+  // Create trainer users
+  const trainers = [
+    {
+      name: 'Anna',
+      telegramId: 'anna-telegram-id',
+      description: 'Experienced functional training specialist with 5+ years of experience. Focuses on improving mobility and overall fitness.',
+    },
+    {
+      name: 'Max',
+      telegramId: 'max-telegram-id',
+      description: 'Strength and conditioning coach. Helps clients build muscle and increase power through progressive overload.',
+    },
+    {
+      name: 'Olga',
+      telegramId: 'olga-telegram-id',
+      description: 'Yoga and stretching instructor. Specializes in flexibility, relaxation, and body awareness.',
+    },
+  ]
+
+  const createdTrainers = []
+  for (const trainerData of trainers) {
+    const user = await prisma.user.upsert({
+      where: { telegramId: trainerData.telegramId },
+      update: {},
+      create: {
+        name: trainerData.name,
+        telegramId: trainerData.telegramId,
+        role: Role.TRAINER,
+        isActive: true,
+      },
+    })
+
+    const trainer = await prisma.trainer.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: {
+        userId: user.id,
+        description: trainerData.description,
+      },
+    })
+
+    createdTrainers.push({ user, trainer })
+    console.log(`✅ Trainer created: ${user.name}`)
+  }
+
+  // Create workout types
+  const workoutTypes = [
+    {
+      name: 'Functional',
+      description: 'Functional training focuses on movements that prepare your body for daily activities.',
+    },
+    {
+      name: 'Strength',
+      description: 'Strength training builds muscle mass and increases overall power.',
+    },
+    {
+      name: 'Stretching',
+      description: 'Stretching sessions improve flexibility, reduce muscle tension, and enhance mobility.',
+    },
+  ]
+
+  for (const workoutTypeData of workoutTypes) {
+    const workoutType = await prisma.workoutType.upsert({
+      where: { name: workoutTypeData.name },
+      update: {},
+      create: {
+        name: workoutTypeData.name,
+        description: workoutTypeData.description,
+      },
+    })
+    console.log(`✅ Workout type created: ${workoutType.name}`)
+  }
+
+  return {
+    admin: 1,
+    client: 1,
+    trainers: createdTrainers.length,
+    workoutTypes: workoutTypes.length,
+  }
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -80,25 +191,51 @@ export async function GET(request: NextRequest) {
 
     console.log('Database tables created successfully')
 
+    // Автоматически заполняем базу данных тестовыми данными
+    console.log('Starting to seed database...')
+    const seedResult = await seedDatabase()
+    console.log('Database seeded successfully')
+
     return NextResponse.json(
       { 
-        message: 'Database tables created successfully',
-        tables: ['User', 'Trainer', 'WorkoutType', 'Session', 'Booking']
+        message: 'Database setup completed successfully!',
+        tables: ['User', 'Trainer', 'WorkoutType', 'Session', 'Booking'],
+        seed: {
+          message: 'Database automatically filled with test data',
+          created: seedResult
+        }
       },
       { status: 200 }
     )
   } catch (error: any) {
     console.error('Error setting up database:', error)
     
-    // Если таблицы уже существуют, это не критично
+    // Если таблицы уже существуют, попробуем заполнить базу данных
     if (error.message?.includes('already exists') || error.code === '42P07') {
-      return NextResponse.json(
-        { 
-          message: 'Tables already exist or partially created',
-          warning: error.message
-        },
-        { status: 200 }
-      )
+      console.log('Tables already exist, trying to seed database...')
+      try {
+        const seedResult = await seedDatabase()
+        return NextResponse.json(
+          { 
+            message: 'Tables already exist. Database filled with test data.',
+            warning: error.message,
+            seed: {
+              message: 'Database automatically filled with test data',
+              created: seedResult
+            }
+          },
+          { status: 200 }
+        )
+      } catch (seedError: any) {
+        return NextResponse.json(
+          { 
+            message: 'Tables already exist, but seeding failed',
+            warning: error.message,
+            seedError: seedError.message
+          },
+          { status: 200 }
+        )
+      }
     }
 
     return NextResponse.json(
